@@ -63,9 +63,15 @@ of python you want to build for, and then run the following command from the roo
   python setup.py bdist_egg
 ```
 
+Alternatively, if you're using Windows, execute the "build.ps1" powershell script to automagically build eggs for any
+installed version of Python from 3.5-3.14(future).
+
+Compiled egg files will appear in the /dist folder of the project root.
+
 # Installation Instructions
 
-Download the [egg file](https://github.com/d8ahazard/deluge-extractorplus-plugin/releases/latest) of the plugin.
+Download the [egg file](https://github.com/d8ahazard/deluge-extractorplus-plugin/releases/latest) of the plugin, or 
+package your own (see above).
 
 #### Notes
 * Plugin eggs have the Python version encoded in the filename and will only load in Deluge if the versions match.
