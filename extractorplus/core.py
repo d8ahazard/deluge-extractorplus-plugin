@@ -298,7 +298,9 @@ class Core(CorePluginBase):
                         for f in allfiles:
                             src = ex_dir.joinpath(f)
                             dest = Path(destination).joinpath(f)
-                            shutil.move(src, dest)
+                            temp_dest = "%s.extplus" % dest
+                            shutil.move(src, temp_dest)
+                            shutil.move(temp_dest, dest)
                     except OSError as e:
                         log.error("Error: %s : %s" % (ex_dir, e.strerror))
 
