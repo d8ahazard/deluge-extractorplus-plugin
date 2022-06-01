@@ -19,7 +19,6 @@ import os
 import shutil
 import subprocess
 import tempfile
-import traceback
 from pathlib import Path
 from shutil import which
 from threading import Thread
@@ -47,7 +46,7 @@ EXTRA_COMMANDS = {}
 
 if windows_check():
     egg_path = pkg_resources.resource_filename(__name__, "7z.exe")
-    log.debug("Local path %s", egg_path)
+    log.debug("Local path %s" % egg_path)
     win_7z_exes = [
         egg_path,
         '7z.exe',
@@ -63,7 +62,7 @@ if windows_check():
             l1_cmds = [win_7z_exe, 'x', '-y', '-aoa']
             l1t_cmds = [win_7z_exe, 'x', '-y', '-so', '-aoa']
             l2_cmds = [win_7z_exe, 'x', '-y', '-ttar', '-si', '-aoa']
-            log.debug("Found 7z: %s", win_7z_exe)
+            log.debug("Found 7z: %s" % win_7z_exe)
             cmds = dict.fromkeys(ext_7z, l1_cmds)
             EXTRACT_COMMANDS = {**cmds, **dict.fromkeys(ext_tar, l1t_cmds)}
             EXTRA_COMMANDS = dict.fromkeys(ext_tar, l2_cmds)
@@ -92,7 +91,7 @@ else:
         if not which(command):
             for k, v in list(EXTRACT_COMMANDS.items()):
                 if command in v[0]:
-                    log.warning('%s not found, disabling support for %s', command, k)
+                    log.warning('%s not found, disabling support for %s' % (command, k))
                     del EXTRACT_COMMANDS[k]
 
 if len(EXTRACT_COMMANDS) == 0:
@@ -136,13 +135,14 @@ class Core(CorePluginBase):
         do_extract = False
         tid.is_finished = False
         torrent_name = t_status['name']
-        log.info("Processing completed torrent: %s", torrent_name)
+        log.info("Processing completed torrent: %s" % torrent_name)
         # Fetch our torrent's label
         labels = self.get_labels(torrent_id)
-        log.debug("Labels collected for %s: %s", torrent_name, labels)
+        log.debug("Labels collected for %s: %s" % (torrent_name, labels))
         # If we've set a label filter, process it
         filters = self.config['label_filter'].replace(" ", "")
         matched_label = None
+        to_extract = []
         if filters != "":
             if len(labels) > 0:
                 # Make the label list once, save needless processing.
@@ -150,12 +150,12 @@ class Core(CorePluginBase):
                     label_list = filters.split(",")
                 else:
                     label_list = [filters]
-                log.debug("Filters collected: %s", label_list)
+                log.debug("Filters collected: %s" % label_list)
 
                 # Make sure there's actually a label
                 for label in labels:
                     if label in label_list:
-                        log.info("Label match(%s), checking %s for archives.", label, torrent_name)
+                        log.info("Label match (%s), checking %s for archives." % (label, torrent_name))
                         matched_label = label
                         do_extract = True
                         break
@@ -164,7 +164,7 @@ class Core(CorePluginBase):
                         break
         # Otherwise, we just extract everything
         else:
-            log.info("No label filters, extracting: %s", torrent_name)
+            log.info("No label filters, extracting: %s" % torrent_name)
             do_extract = True
 
         if do_extract:
@@ -183,109 +183,127 @@ class Core(CorePluginBase):
             files = tid.get_files()
 
             for f in files:
+                file = f['path']
                 # Override destination to file path if in_place set
                 f_parent = Path(t_status['download_location']).joinpath(os.path.dirname(f['path']))
                 if extract_in_place and ((not os.path.exists(f_parent)) or os.path.isdir(f_parent)):
                     dest = f_parent
+                file_root, file_ext = os.path.splitext(f['path'])
+                file_ext_sec = os.path.splitext(file_root)[1]
+                if file_ext_sec == ".tar":
+                    file_ext = file_ext_sec + file_ext
+                    file_root = os.path.splitext(file_root)[0]
+                    # IF it's not extractable, move on.
+                if file_ext not in EXTRACT_COMMANDS:
+                    continue
 
-                self.process_file(f['path'], files, t_status, torrent_id, dest)
+                    # Check to prevent double extraction with rar/r00 files
+                if file_ext == '.r00' and any(x['path'] == file_root + '.rar' for x in files):
+                    log.debug('Skipping file with .r00 extension because a matching .rar file exists: %s' % file)
+                    continue
 
+                    # Check for RAR archives with PART in the name
+                if file_ext == '.rar' and 'part' in file_root:
+                    part_num = file_root.split('part')[1]
+                    if part_num.isdigit() and int(part_num) != 1:
+                        log.debug('Skipping remaining multi-part rar files: %s' % file)
+                        continue
+                eo = ExtractObject(f['path'], dest)
+                to_extract.append(eo)
+
+        if len(to_extract) > 0:
+            thread = Thread(target=self.process_files, args=(to_extract, t_status, torrent_id, torrent_name))
+            thread.start()
         else:
             tid.is_finished = True
-            log.info("Processing complete for torrent: %s", torrent_name)
+            log.info("Processing complete for torrent: %s" % torrent_name)
 
-    def process_file(self, file, files, t_status, torrent_id, dest):
-        file_root, file_ext = os.path.splitext(file)
-        file_ext_sec = os.path.splitext(file_root)[1]
-        if file_ext_sec == ".tar":
-            file_ext = file_ext_sec + file_ext
-            file_root = os.path.splitext(file_root)[0]
-        # IF it's not extractable, move on.
-        if file_ext not in EXTRACT_COMMANDS:
-            return
+    """
+    """
 
-        # Check to prevent double extraction with rar/r00 files
-        if file_ext == '.r00' and any(x['path'] == file_root + '.rar' for x in files):
-            log.debug('Skipping file with .r00 extension because a matching .rar file exists: %s', file)
-            return
-
-        # Check for RAR archives with PART in the name
-        if file_ext == '.rar' and 'part' in file_root:
-            part_num = file_root.split('part')[1]
-            if part_num.isdigit() and int(part_num) != 1:
-                log.debug('Skipping remaining multi-part rar files: %s', file)
-                return
-
-        log.info("Extracting %s", file)
-        fpath = os.path.normpath(os.path.join(t_status['download_location'], file))
-        # Clear these to prevent doubling up of commands
-        new_cmd = None
-        ext_cmd = None
-        full_command = None
-        extra = None
-        # Get base commands
-        full_command = EXTRACT_COMMANDS[file_ext].copy()
-        # Append file path
-        full_command.append(fpath)
-        # Check to see if we need two steps for windows/7z
-        if file_ext in EXTRA_COMMANDS:
-            extra = EXTRA_COMMANDS[file_ext].copy()
-            ext_cmd = extra[:]
-        new_cmd = full_command[:]
-        self.EXTRACT_COUNT += 1
-        self.EXTRACT_TOTAL = self.EXTRACT_COUNT
-        thread = Thread(target=self.do_extract, args=(new_cmd, dest, torrent_id, fpath, ext_cmd))
-        thread.start()
-
-    def do_extract(self, cmd, destination, torrent_id, path, cmd2=None):
+    def process_files(self, files: list, t_status: object, torrent_id: str, torrent_name: str) -> object:
+        extract_objects = []
         torrent = component.get('TorrentManager').torrents[torrent_id]
+        file: ExtractObject
+        for file in files:
+            full_command = None
+            file_root, file_ext = os.path.splitext(file.path)
+            file_ext_sec = os.path.splitext(file_root)[1]
+            if file_ext_sec == ".tar":
+                file_ext = file_ext_sec + file_ext
+            log.info("Extracting %s" % file.path)
+            fpath = os.path.normpath(os.path.join(t_status['download_location'], file.path))
+            file.path = fpath
+            # Get base commands
+            full_command = EXTRACT_COMMANDS[file_ext].copy()
+            # Append file path
+            file.command1 = full_command
+            # Check to see if we need two steps for windows/7z
+            if file_ext in EXTRA_COMMANDS:
+                file.command2 = EXTRA_COMMANDS[file_ext].copy()
+            extract_objects.append(file)
+
+        if len(extract_objects) > 0:
+            use_temp = self.config["use_temp_dir"]
+            ex_obj: ExtractObject
+            for ex_obj in extract_objects:
+                self.do_extract(ex_obj, torrent_id)
+            if use_temp:
+                ex_dir = Path(tempfile.gettempdir()).joinpath(str(torrent_id))
+                os.rmdir(ex_dir)
+        torrent.is_finished = True
+        log.info("Processing complete for torrent: %s" % torrent_name)
+
+    def do_extract(self, to_extract, torrent_id):
+        """
+        :param torrent_id:
+        :type to_extract: ExtractObject
+        """
+        destination = to_extract.destination
         use_temp = self.config["use_temp_dir"]
-        ex_dir = destination
+        ex_dir = to_extract.destination
         if use_temp:
             ex_dir = Path(tempfile.gettempdir()).joinpath(str(torrent_id))
         try:
+            commands = to_extract.command1
+            commands.append(to_extract.path)
             if not (os.path.exists(ex_dir) and os.path.isdir(ex_dir) and use_temp):
                 os.makedirs(ex_dir)
-
-            if cmd2 is None:
-                log.debug('Extracting with command: "%s" to temp "%s"', " ".join(cmd), str(ex_dir.name))
-                ps = subprocess.run(cmd, cwd=ex_dir, capture_output=True)
+            if to_extract.command2 is None:
+                log.debug('Extracting with command: "%s" to "%s"' % (" ".join(commands), str(ex_dir.name)))
+                ps = subprocess.Popen(to_extract.command1, cwd=ex_dir, stdout=subprocess.PIPE)
+                ps.wait()
+                log.info("Extraction complete.")
             else:
-                log.debug("Extracting with commands: '%s' and '%s'", " ".join(cmd), " ".join(cmd2))
-                ps = subprocess.Popen(cmd, cwd=ex_dir, stdout=subprocess.PIPE)
-                _ = subprocess.check_output(cmd2, cwd=ex_dir, stdin=ps.stdout)
+                log.debug("Extracting with commands: '%s' and '%s'" % (" ".join(commands), to_extract.command2))
+                ps = subprocess.Popen(to_extract.command1, cwd=ex_dir, stdout=subprocess.PIPE)
+                _ = subprocess.check_output(to_extract.command2, cwd=ex_dir, stdin=ps.stdout)
                 ps.wait()
             if ps.returncode != 0:
                 log.error(
-                    'Extract failed fo r%s with code %s', path, ps.returncode
+                    'Extract failed for %s with code %s' % (ex_dir, ps.returncode)
                 )
-        except Exception:
-            log.error("Extract Exception:", traceback.format_exc())
-
-        # Don't mark an extracting torrent complete until callback is fired AND all extractions are done.
-        self.EXTRACT_COUNT -= 1
-        if self.EXTRACT_COUNT == 0:
-            torrent.is_finished = True
-            t_status = torrent.get_status([], False, False, True)
-            log.info("Extraction complete for %s, extracted %s archive(s).", t_status['name'], self.EXTRACT_TOTAL)
-            if use_temp:
-                try:
-                    allfiles = os.listdir(ex_dir)
+            else:
+                if use_temp:
+                    log.debug("Moving files from temp...")
                     try:
-                        if not (os.path.exists(destination) and os.path.isdir(destination)):
-                            os.makedirs(destination)
-                    except OSError as ex:
-                        if not (ex.errno == errno.EEXIST and os.path.isdir(destination)):
-                            log.error("Error creating destination folder: %s", ex)
-                            return
-                    log.debug("Moving files for %s from temp to %s.", t_status['name'], destination)
-                    for f in allfiles:
-                        src = ex_dir.joinpath(f)
-                        dest = Path(destination).joinpath(f)
-                        shutil.move(src, dest)
-                    os.rmdir(ex_dir)
-                except OSError as e:
-                    log.error("Error: %s : %s" % (ex_dir, e.strerror))
+                        allfiles = os.listdir(ex_dir)
+                        try:
+                            if not (os.path.exists(destination) and os.path.isdir(destination)):
+                                os.makedirs(destination)
+                        except OSError as ex:
+                            if not (ex.errno == errno.EEXIST and os.path.isdir(destination)):
+                                log.error("Error creating destination folder: %s" % ex)
+                        log.debug("Moving files for %s from temp to %s." % (to_extract.path, destination))
+                        for f in allfiles:
+                            src = ex_dir.joinpath(f)
+                            dest = Path(destination).joinpath(f)
+                            shutil.move(src, dest)
+                    except OSError as e:
+                        log.error("Error: %s : %s" % (ex_dir, e.strerror))
+
+        except Exception as e:
+            log.error("Extract Exception: %s" % e)
 
     @staticmethod
     def get_labels(torrent_id):
@@ -319,3 +337,11 @@ class Core(CorePluginBase):
     def get_config(self):
         """Returns the config dictionary."""
         return self.config.config
+
+
+class ExtractObject:
+    def __init__(self, path, destination):
+        self.path = path
+        self.destination = destination
+        self.command1 = None
+        self.command2 = None

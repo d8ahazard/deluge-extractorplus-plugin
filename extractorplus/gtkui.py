@@ -15,14 +15,10 @@ from __future__ import unicode_literals
 
 import logging
 
-import gi  # isort:skip (Required before Gtk import).
 
-gi.require_version('Gtk', '3.0')  # NOQA: E402
-
-# isort:imports-thirdparty
 from gi.repository import Gtk
 
-# isort:imports-firstparty
+
 import deluge.component as component
 from deluge.plugins.pluginbase import Gtk3PluginBase
 from deluge.ui.client import client
@@ -33,11 +29,10 @@ from .common import get_resource
 log = logging.getLogger(__name__)
 
 
-class GtkUI(Gtk3PluginBase):
+class Gtk3UI(Gtk3PluginBase):
     def enable(self):
         self.plugin = component.get('PluginManager')
-        self.builder = Gtk.Builder()
-        self.builder.add_from_file(get_resource('extractorplus_prefs.ui'))
+        self.builder = Gtk.Builder().new_from_file(get_resource('extractorplus_prefs.ui'))
 
         component.get('Preferences').add_page(
             _('Extractor Plus'), self.builder.get_object('extractor_prefs_box')

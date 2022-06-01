@@ -22,8 +22,8 @@ for ($j = 0; $j -lt $python_paths.count; $j++) {
     }
 }
 
-if (Test-Path -Path ".\dist\ExtractorPlus-1.5-py$ver.egg") {
-    Copy-Item ".\dist\ExtractorPlus-1.5-py$ver.egg" -Destination $deluge_path -Force
+if (Test-Path -Path ".\dist\ExtractorPlus-1.6.0-py$ver.egg") {
+    Copy-Item ".\dist\ExtractorPlus-1.6.0-py$ver.egg" -Destination $deluge_path -Force
 }
 
 $deluge = Get-Process deluge -ErrorAction SilentlyContinue

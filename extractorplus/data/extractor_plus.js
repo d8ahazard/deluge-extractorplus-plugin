@@ -21,13 +21,19 @@ Ext.ns('Deluge.ux.preferences');
 Deluge.ux.preferences.ExtractorPlusPage = Ext.extend(Ext.Panel, {
 
     title: _('Extractor Plus'),
+    header: false,
     layout: 'fit',
     border: false,
 
     initComponent: function () {
         Deluge.ux.preferences.ExtractorPlusPage.superclass.initComponent.call(this);
-
-       this.behaviorSet = this.add({
+      this.form = this.add({
+            xtype: 'form',
+            layout: 'form',
+            border: false,
+            autoHeight: true,
+        });
+       this.behaviorSet = this.form.add({
             xtype: 'fieldset',
             border: false,
             title: _('Extraction Behavior'),
@@ -115,7 +121,7 @@ Deluge.ux.preferences.ExtractorPlusPage = Ext.extend(Ext.Panel, {
         });
 
 
-        this.destinationSet = this.add({
+        this.destinationSet = this.form.add({
             xtype: 'fieldset',
             border: false,
             title: _('Destination'),
@@ -161,7 +167,7 @@ Deluge.ux.preferences.ExtractorPlusPage = Ext.extend(Ext.Panel, {
         })
 
 
-        this.labelSet = this.add({
+        this.labelSet = this.form.add({
             xtype: 'fieldset',
             border: false,
             title: _('Label Filtering'),
@@ -253,11 +259,15 @@ Deluge.ux.preferences.ExtractorPlusPage = Ext.extend(Ext.Panel, {
 Deluge.plugins.ExtractorPlusPlugin = Ext.extend(Deluge.Plugin, {
     name: 'Extractor Plus',
     onDisable: function () {
+    console.log("Extractor plus disabled.");
         deluge.preferences.removePage(this.prefsPage);
     },
 
     onEnable: function () {
-        this.prefsPage = deluge.preferences.addPage(new Deluge.ux.preferences.ExtractorPlusPage());
+        console.log("Extractor plus enabled.");
+        this.prefsPage = deluge.preferences.addPage(
+        new Deluge.ux.preferences.ExtractorPlusPage()
+        );
     }
 });
 Deluge.registerPlugin('Extractor Plus', Deluge.plugins.ExtractorPlusPlugin);
