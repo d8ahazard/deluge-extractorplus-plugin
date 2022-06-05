@@ -22,6 +22,10 @@ And so, here we are!
 
 <img src="https://user-images.githubusercontent.com/1633844/169892976-d339e735-8111-48a2-9eea-43c994020927.png" width="400">
 
+#### (New) Automatic Cleanup:
+When enabled, extracted files will automatically be deleted after a specified period of time. Useful for cases
+where you only need the extracted files to exist long enough to be copied by other applications.
+
 
 #### (New) Temp directory support:
 If a download is being monitored by other software, issues can often arise when extraction begins and the "other"

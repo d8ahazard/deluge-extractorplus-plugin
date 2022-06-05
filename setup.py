@@ -16,7 +16,7 @@ from setuptools import find_packages, setup
 __plugin_name__ = 'ExtractorPlus'
 __author__ = 'Digitalhigh'
 __author_email__ = 'donate.to.digitalhigh@gmail.com'
-__version__ = '1.6.0'
+__version__ = '1.6.1'
 __url__ = 'github.com/d8ahazard/deluge-extractorplus-plugin'
 __license__ = 'GPLv3'
 __description__ = 'Extract files upon torrent completion'
@@ -44,11 +44,10 @@ setup(
     entry_points="""
     [deluge.plugin.core]
     %s = %s:CorePlugin
-    [deluge.plugin.gtkui]
+    [deluge.plugin.gtk3ui]
     %s = %s:GtkUIPlugin
     [deluge.plugin.web]
     %s = %s:WebUIPlugin
-    [deluge.plugin.gtk3ui]
-    %s = %s:Gtk3UIPlugin
-    """ % ((__plugin_name__, __plugin_name__.lower())*4)
+    """
+                 % ((__plugin_name__, __plugin_name__.lower()) * 3),
 )

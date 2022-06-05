@@ -96,7 +96,7 @@ Deluge.ux.preferences.ExtractorPlusPage = Ext.extend(Ext.Panel, {
             listeners: {
                 change: function (radio, newValue, oldValue) {
                     console.log("CLICK: ", newValue['inputValue']);
-                    this.setDestDisabled(newValue['inputValue'] !== "extract_selected_folder");
+                    this.setDestEnabled(newValue['inputValue'] === "extract_selected_folder");
                 },
                 scope: this,
             },
@@ -167,6 +167,59 @@ Deluge.ux.preferences.ExtractorPlusPage = Ext.extend(Ext.Panel, {
         })
 
 
+        this.cleanupSet = this.form.add({
+            xtype: 'fieldset',
+            border: false,
+            title: _('Cleanup'),
+            autoHeight: true,
+            labelAlign: 'top',
+            labelWidth: 80,
+            defaultType: 'textfield',
+            style: 'margin-top: 3px; margin-bottom: 0px; padding-bottom: 0px;'
+        });
+
+        this.autoCleanup = this.cleanupSet.add({
+            xtype: 'checkbox',
+            columns: 1,
+            colspan: 2,
+            labelStyle: 'display: none',
+            boxLabel: _('Auto-Delete Extracted Files'),
+            name: "auto_cleanup",
+            listeners: {
+                render: function (c) {
+                    Ext.QuickTips.register({
+                        target: c,
+                        text: 'Auto-Delete Extracted Files After a Specified Period of Time (In Hours).'
+                    });
+                },
+                change: function (radio, newValue, oldValue) {
+                    console.log("CHG: ", newValue);
+                    this.showCleanupTime(newValue);
+                },
+                scope: this,
+                click: function (radio, newValue, oldValue) {
+                    console.log("CHG: ", newValue);
+                    this.showCleanupTime(newValue);
+                }
+            },
+        });
+
+        this.autoCleanupTime = this.cleanupSet.add({
+            fieldLabel: _('Cleanup Time (Hours):'),
+            name: 'cleanup_time',
+            labelSeparator: '',
+            width: '97%',
+            style: 'margin-bottom: 0px; padding-top: 0px; padding-bottom: 0px',
+            listeners: {
+                render: function (c) {
+                    Ext.QuickTips.register({
+                        target: c,
+                        text: 'Number of hours before deleting an extracted file.'
+                    });
+                }
+            }
+        });
+
         this.labelSet = this.form.add({
             xtype: 'fieldset',
             border: false,
@@ -217,7 +270,11 @@ Deluge.ux.preferences.ExtractorPlusPage = Ext.extend(Ext.Panel, {
         config[eBehavior] = true;
         config['label_filter'] = this.labelFilter.getValue();
         config['use_temp_dir'] = this.useTemp.getValue();
-        this.setDestDisabled(eBehavior !== "extract_selected_folder");
+        config['auto_cleanup'] = this.autoCleanup.getValue();
+        config['cleanup_time'] = this.autoCleanupTime.getValue();
+        config['append_matched_label'] = this.appendLabel.getValue();
+        this.setDestEnabled(eBehavior === "extract_selected_folder");
+        this.showCleanupTime(config['auto_cleanup']);
         deluge.client.extractorplus.set_config(config);
     },
 
@@ -236,22 +293,26 @@ Deluge.ux.preferences.ExtractorPlusPage = Ext.extend(Ext.Panel, {
                 if (config['extract_torrent_root']) {
                     behavior = 'extract_torrent_root';
                 }
-                this.setDestDisabled(behavior !== "extract_selected_folder");
+                this.setDestEnabled(behavior === "extract_selected_folder");
+                this.showCleanupTime(config['auto_cleanup']);
                 this.extractBehavior.setValue(behavior);
                 this.labelFilter.setValue(config['label_filter']);
                 this.useTemp.setValue(config['use_temp_dir']);
+                this.appendLabel.setValue(config['append_matched_label']);
+                this.autoCleanup.setValue(config['auto_cleanup']);
+                this.autoCleanupTime.setValue(config['cleanup_time']);
             },
             scope: this
         });
     },
 
-    setDestDisabled: function (disable) {
-        console.log("SetDest: ", disable);
-        if (disable) {
-            this.destinationSet.setVisible(false);
-        } else {
-            this.destinationSet.setVisible(true);
-        }
+    setDestEnabled: function (enable) {
+        console.log("SetDest: ", enable);
+        this.destinationSet.setVisible(enable);
+    },
+
+    showCleanupTime: function(enable) {
+        this.autoCleanupTime.setVisible(enable);
     }
 });
 

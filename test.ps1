@@ -1,4 +1,5 @@
 ﻿$ver = "39"
+$eggver = "3.9"
 if ($args) {
     $ver = $args[0]
 }
@@ -22,8 +23,11 @@ for ($j = 0; $j -lt $python_paths.count; $j++) {
     }
 }
 
-if (Test-Path -Path ".\dist\ExtractorPlus-1.6.0-py$ver.egg") {
-    Copy-Item ".\dist\ExtractorPlus-1.6.0-py$ver.egg" -Destination $deluge_path -Force
+if (Test-Path -Path ".\dist\ExtractorPlus-1.6.1-py$eggver.egg") {
+    Write-Host "Copying egg to $deluge_path"
+    Copy-Item ".\dist\ExtractorPlus-1.6.1-py$eggver.egg" -Destination $deluge_path -Force
+} else {
+    Write-Host "Can't find egg: .\dist\ExtractorPlus-1.6.1-py$eggver.egg"
 }
 
 $deluge = Get-Process deluge -ErrorAction SilentlyContinue
