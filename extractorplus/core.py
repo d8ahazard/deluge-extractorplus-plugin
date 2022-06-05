@@ -13,12 +13,14 @@
 
 from __future__ import unicode_literals
 
+import datetime
 import errno
 import logging
 import os
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from shutil import which
 from threading import Thread
@@ -31,6 +33,8 @@ from deluge.configmanager import ConfigManager
 from deluge.core.rpcserver import export
 from deluge.plugins.pluginbase import CorePluginBase
 
+from extractorplus.RepeatedTimer import RepeatedTimer
+
 log = logging.getLogger(__name__)
 
 DEFAULT_PREFS = {'extract_path': '',
@@ -39,8 +43,13 @@ DEFAULT_PREFS = {'extract_path': '',
                  'extract_torrent_root': True,
                  'use_temp_dir': True,
                  'append_matched_label': False,
-                 'label_filter': ''}
+                 'label_filter': '',
+                 'auto_cleanup': False,
+                 'cleanup_time': 2,
+                 'extracted': []
+                 }
 
+EXTRACTED_FILES = {}
 EXTRACT_COMMANDS = {}
 EXTRA_COMMANDS = {}
 
@@ -103,16 +112,35 @@ class Core(CorePluginBase):
         super().__init__(plugin_name)
         self.EXTRACT_COUNT = 0
         self.EXTRACT_TOTAL = 0
+        self.check_thread = None
 
     def enable(self):
         log.info("ExtractorPlus enabled.")
         self.config = deluge.configmanager.ConfigManager(
             'extractorplus.conf', DEFAULT_PREFS
         )
+        if "auto_cleanup" not in self.config:
+            self.config["auto_cleanup"] = False
+            self.config.save()
+        if "cleanup_time" not in self.config:
+            self.config["cleanup_time"] = 2
+            self.config.save()
+        if self.config["cleanup_time"] < 1:
+            self.config["cleanup_time"] = 1
+            self.config.save()
         if not self.config['extract_path']:
             self.config['extract_path'] = deluge.configmanager.ConfigManager(
                 'core.conf'
             )['download_location']
+        self.check_thread = RepeatedTimer(30, self.check_cleanup)
+        if self.config['auto_cleanup']:
+            log.info("Starting check thread...")
+            self.check_thread.start()
+        else:
+            try:
+                self.check_thread.stop()
+            except Exception as q:
+                log.info("Exception stopping check thread: %s" % q)
         component.get('EventManager').register_event_handler(
             'TorrentFinishedEvent', self._on_torrent_finished
         )
@@ -121,9 +149,40 @@ class Core(CorePluginBase):
         component.get('EventManager').deregister_event_handler(
             'TorrentFinishedEvent', self._on_torrent_finished
         )
+        if self.check_thread is not None:
+            log.info("Stopping check thread.")
+            try:
+                self.check_thread.stop()
+            except Exception as ex:
+                log.error("Exception stopping check thread: %s" % ex)
 
     def update(self):
         pass
+
+    def check_cleanup(self):
+        if not self.config['auto_cleanup']:
+            return
+        now = time.time()
+        cleanup_time = self.config['cleanup_time']
+        new_extracted = []
+        extracted = self.config['extracted']
+        save = False
+        for f in extracted:
+            if os.path.exists(f):
+                file_time = os.path.getmtime(f)
+                file_age = now - file_time
+                if file_age / 3600 >= cleanup_time:
+                    log.info("Auto-deleting %s after %s hour(s)." % (f, cleanup_time))
+                    os.remove(f)
+                    save = True
+                else:
+                    new_extracted.append(f)
+            else:
+                log.info("File %s no longer exists, removing from tracking." % f)
+                save = True
+        if save:
+            self.config['extracted'] = new_extracted
+            self.config.save()
 
     def _on_torrent_finished(self, torrent_id):
         """
@@ -134,6 +193,7 @@ class Core(CorePluginBase):
         t_status = tid.get_status([], False, False, True)
         do_extract = False
         tid.is_finished = False
+        tid.update_state()
         torrent_name = t_status['name']
         log.info("Processing completed torrent: %s" % torrent_name)
         # Fetch our torrent's label
@@ -216,6 +276,7 @@ class Core(CorePluginBase):
             thread.start()
         else:
             tid.is_finished = True
+            tid.update_state()
             log.info("Processing complete for torrent: %s" % torrent_name)
 
     """
@@ -252,6 +313,7 @@ class Core(CorePluginBase):
                 ex_dir = Path(tempfile.gettempdir()).joinpath(str(torrent_id))
                 os.rmdir(ex_dir)
         torrent.is_finished = True
+        torrent.update_state()
         log.info("Processing complete for torrent: %s" % torrent_name)
 
     def do_extract(self, to_extract, torrent_id):
@@ -265,17 +327,21 @@ class Core(CorePluginBase):
         if use_temp:
             ex_dir = Path(tempfile.gettempdir()).joinpath(str(torrent_id))
         try:
-            commands = to_extract.command1
-            commands.append(to_extract.path)
             if not (os.path.exists(ex_dir) and os.path.isdir(ex_dir) and use_temp):
                 os.makedirs(ex_dir)
+        except Exception as f:
+            log.info("MKEX: %s" % f)
+        try:
+            commands = to_extract.command1
+            commands.append(to_extract.path)
+            existing_files = os.listdir(ex_dir)
             if to_extract.command2 is None:
-                log.debug('Extracting with command: "%s" to "%s"' % (" ".join(commands), str(ex_dir.name)))
+                log.info('Extracting with command: "%s" to "%s"' % (" ".join(commands), str(ex_dir.name)))
                 ps = subprocess.Popen(to_extract.command1, cwd=ex_dir, stdout=subprocess.PIPE)
                 ps.wait()
                 log.info("Extraction complete.")
             else:
-                log.debug("Extracting with commands: '%s' and '%s'" % (" ".join(commands), to_extract.command2))
+                log.info("Extracting with commands: '%s' and '%s'" % (" ".join(commands), to_extract.command2))
                 ps = subprocess.Popen(to_extract.command1, cwd=ex_dir, stdout=subprocess.PIPE)
                 _ = subprocess.check_output(to_extract.command2, cwd=ex_dir, stdin=ps.stdout)
                 ps.wait()
@@ -284,6 +350,7 @@ class Core(CorePluginBase):
                     'Extract failed for %s with code %s' % (ex_dir, ps.returncode)
                 )
             else:
+                now = datetime.datetime.now().timestamp()
                 if use_temp:
                     log.debug("Moving files from temp...")
                     try:
@@ -295,15 +362,31 @@ class Core(CorePluginBase):
                             if not (ex.errno == errno.EEXIST and os.path.isdir(destination)):
                                 log.error("Error creating destination folder: %s" % ex)
                         log.debug("Moving files for %s from temp to %s." % (to_extract.path, destination))
+                        extracted = self.config['extracted']
                         for f in allfiles:
                             src = ex_dir.joinpath(f)
                             dest = Path(destination).joinpath(f)
                             temp_dest = "%s.extplus" % dest
+                            log.info("Moving %s to %s" % (src, temp_dest))
                             shutil.move(src, temp_dest)
+                            log.info("Renaming %s to %s" % (temp_dest, dest))
                             shutil.move(temp_dest, dest)
+                            os.utime(dest, (now, now))
+                            extracted.append(str(dest))
+                        self.config['extracted'] = extracted
+                        self.config.save()
                     except OSError as e:
                         log.error("Error: %s : %s" % (ex_dir, e.strerror))
-
+                else:
+                    extracted = self.config['extracted']
+                    new_files = os.listdir(ex_dir)
+                    for new_file in new_files:
+                        if new_file not in existing_files:
+                            dest = Path(ex_dir).joinpath(new_file)
+                            os.utime(dest, (now, now))
+                            extracted.append(str(dest))
+                    self.config['extracted'] = extracted
+                    self.config.save()
         except Exception as e:
             log.error("Extract Exception: %s" % e)
 
@@ -331,8 +414,15 @@ class Core(CorePluginBase):
     @export
     def set_config(self, config):
         """Sets the config dictionary."""
+        auto_clean = self.config['auto_cleanup']
         for key in config:
             self.config[key] = config[key]
+        if auto_clean != self.config['auto_cleanup']:
+            auto_clean = self.config['auto_cleanup']
+            if auto_clean:
+                self.check_thread.start()
+            else:
+                self.check_thread.stop()
         self.config.save()
 
     @export
