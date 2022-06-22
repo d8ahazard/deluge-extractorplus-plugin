@@ -120,6 +120,22 @@ Deluge.ux.preferences.ExtractorPlusPage = Ext.extend(Ext.Panel, {
             }
         });
 
+        this.appendArchive = this.behaviorSet.add({
+            xtype: 'checkbox',
+            columns: 1,
+            colspan: 2,
+            labelStyle: 'display: none',
+            boxLabel: _('Append Archive Name to Destination'),
+            name: "append_archive_name",
+            listeners: {
+                render: function (c) {
+                    Ext.QuickTips.register({
+                        target: c,
+                        text: 'When enabled, a directory will be created in the extraction destination named after the torrent being extracted.'
+                    });
+                }
+            }
+        });
 
         this.destinationSet = this.form.add({
             xtype: 'fieldset',
@@ -270,6 +286,7 @@ Deluge.ux.preferences.ExtractorPlusPage = Ext.extend(Ext.Panel, {
         config[eBehavior] = true;
         config['label_filter'] = this.labelFilter.getValue();
         config['use_temp_dir'] = this.useTemp.getValue();
+        config['append_archive_name'] = this.appendArchive.getValue();
         config['auto_cleanup'] = this.autoCleanup.getValue();
         config['cleanup_time'] = this.autoCleanupTime.getValue();
         config['append_matched_label'] = this.appendLabel.getValue();
@@ -301,6 +318,7 @@ Deluge.ux.preferences.ExtractorPlusPage = Ext.extend(Ext.Panel, {
                 this.appendLabel.setValue(config['append_matched_label']);
                 this.autoCleanup.setValue(config['auto_cleanup']);
                 this.autoCleanupTime.setValue(config['cleanup_time']);
+                this.appendArchive.setValue(config['append_archive_name']);
             },
             scope: this
         });

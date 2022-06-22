@@ -86,7 +86,8 @@ class GtkUI(Gtk3PluginBase):
             'use_temp_dir': self.builder.get_object("use_temp_dir").get_active(),
             'append_matched_label': self.builder.get_object("append_matched_label").get_active(),
             'cleanup_time': cleanup_time,
-            'auto_cleanup': self.builder.get_object("auto_cleanup").get_active()
+            'auto_cleanup': self.builder.get_object("auto_cleanup").get_active(),
+            'append_archive_name': self.builder.get_object('append_archive_name').get_active()
         }
 
         client.extractorplus.set_config(config)
@@ -105,8 +106,10 @@ class GtkUI(Gtk3PluginBase):
             use_selected = config['extract_selected_folder']
             cleanup_time = config['cleanup_time']
             auto_cleanup = config['auto_cleanup']
+            append_archive_name = config['append_archive_name']
             self.on_target_change(use_selected)
             self.builder.get_object('auto_cleanup').set_active(auto_cleanup)
+            self.builder.get_object('append_archive_name').set_active(append_archive_name)
             self.builder.get_object('cleanup_time').set_text(str(cleanup_time))
             self.on_auto_clean_change(auto_cleanup)
             self.builder.get_object('extract_selected_folder').set_active(

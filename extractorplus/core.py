@@ -16,6 +16,7 @@ from __future__ import unicode_literals
 import datetime
 import errno
 import logging
+import ntpath
 import os
 import shutil
 import subprocess
@@ -43,6 +44,7 @@ DEFAULT_PREFS = {'extract_path': '',
                  'extract_torrent_root': True,
                  'use_temp_dir': True,
                  'append_matched_label': False,
+                 'append_archive_name': False,
                  'label_filter': '',
                  'auto_cleanup': False,
                  'cleanup_time': 2,
@@ -119,6 +121,9 @@ class Core(CorePluginBase):
         self.config = deluge.configmanager.ConfigManager(
             'extractorplus.conf', DEFAULT_PREFS
         )
+        if "append_archive_name" not in self.config:
+            self.config["append_archive_name"] = False
+            self.config.save()
         if "auto_cleanup" not in self.config:
             self.config["auto_cleanup"] = False
             self.config.save()
@@ -231,6 +236,7 @@ class Core(CorePluginBase):
             extract_in_place = self.config["extract_in_place"]
             extract_selected_folder = self.config["extract_selected_folder"]
             append_label = self.config["append_matched_label"]
+            append_archive = self.config["append_archive_name"]
             extract_torrent_root = self.config["extract_torrent_root"]
             dest = Path(self.config["extract_path"])
 
@@ -239,15 +245,16 @@ class Core(CorePluginBase):
             # Override destination if extract_torrent_root is set
             if extract_torrent_root:
                 dest = Path(t_status['download_location']).joinpath(t_status['name'])
-
             files = tid.get_files()
 
             for f in files:
                 file = f['path']
+                file_dest = dest
                 # Override destination to file path if in_place set
                 f_parent = Path(t_status['download_location']).joinpath(os.path.dirname(f['path']))
                 if extract_in_place and ((not os.path.exists(f_parent)) or os.path.isdir(f_parent)):
-                    dest = f_parent
+                    file_dest = f_parent
+
                 file_root, file_ext = os.path.splitext(f['path'])
                 file_ext_sec = os.path.splitext(file_root)[1]
                 if file_ext_sec == ".tar":
@@ -256,6 +263,11 @@ class Core(CorePluginBase):
                     # IF it's not extractable, move on.
                 if file_ext not in EXTRACT_COMMANDS:
                     continue
+
+                if append_archive:
+                    file_name = ntpath.basename(f['path'])
+                    archive_name = os.path.splitext(file_name)[0]
+                    file_dest = Path(file_dest).joinpath(archive_name)
 
                     # Check to prevent double extraction with rar/r00 files
                 if file_ext == '.r00' and any(x['path'] == file_root + '.rar' for x in files):
@@ -268,7 +280,7 @@ class Core(CorePluginBase):
                     if part_num.isdigit() and int(part_num) != 1:
                         log.debug('Skipping remaining multi-part rar files: %s' % file)
                         continue
-                eo = ExtractObject(f['path'], dest)
+                eo = ExtractObject(f['path'], file_dest)
                 to_extract.append(eo)
 
         if len(to_extract) > 0:
