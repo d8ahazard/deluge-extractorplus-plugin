@@ -235,7 +235,7 @@ class Core(CorePluginBase):
             dest = Path(self.config["extract_path"])
 
             if extract_selected_folder and append_label and matched_label is not None:
-                dest.joinpath(matched_label)
+                dest = dest.joinpath(matched_label)
             # Override destination if extract_torrent_root is set
             if extract_torrent_root:
                 dest = Path(t_status['download_location']).joinpath(t_status['name'])
