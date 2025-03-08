@@ -12,7 +12,7 @@ change the name and re-release it as "Extractor Plus".
 
 And so, here we are!
 
-<img src="https://user-images.githubusercontent.com/1633844/169893033-1012f628-93aa-41f6-95fe-a3f37dbbf7b2.png" width="400">
+<img src="https://user-images.githubusercontent.com/1633844/175136999-caa39f0e-7cce-46a8-aab5-75f184af842e.png" width="400">
 
 # Features
 #### Specify download locations:
@@ -20,12 +20,14 @@ And so, here we are!
 * Torrent root: Extract each rar to the root of the torrent download. If a file is in /downloads/TORRENTNAME/sub/subs.rar, it will be extracted to /downloads/TORRENTNAME/.
 * Selected Folder: Extract to a directory that you specify.
 
-<img src="https://user-images.githubusercontent.com/1633844/169892976-d339e735-8111-48a2-9eea-43c994020927.png" width="400">
+<img src="https://user-images.githubusercontent.com/1633844/175137180-36b44026-69bf-4294-b8fd-a659311f8ac8.png" width="400">
+
+#### (New) Append Archive Name to Root
+When enabled, a directory will be created in the extraction destination named after the torrent being extracted.
 
 #### (New) Automatic Cleanup:
 When enabled, extracted files will automatically be deleted after a specified period of time. Useful for cases
 where you only need the extracted files to exist long enough to be copied by other applications.
-
 
 #### (New) Temp directory support:
 If a download is being monitored by other software, issues can often arise when extraction begins and the "other"
@@ -35,12 +37,12 @@ then moving the completed file, these issues can be avoided. This can be disable
 #### Label filtering:
 Enter a comma-separated list of labels, only those labels will be extracted. Works with the default labels plugin, as well as labelplus.
 
-#### (New) "Append Label" support:
+#### "Append Label" support:
 Allows appending a matched label to the extraction path when using "Selected Folder" as the download location.
 IE: If you are extracting files to /downloads/extracted and a torrent has the label "Movies", the contents of the torrent
 will be extracted to /downloads/extracted/Movies/
 
-#### (New) Full cross-platform archive support:
+#### Full cross-platform archive support:
 Previous versions of this plugin were unable to handle tar.* archives due to requiring two separate commands.
 This is no longer the case.
 
@@ -52,8 +54,6 @@ The plugin now also use only "native" Python packages, and doesn't require anyth
 
 #### Updated UI:
 Now with tooltips and settings sections that only appear when needed. :D 
-
-<img src="https://user-images.githubusercontent.com/1633844/169893196-52d2b252-6dfa-4e32-b7c2-52a12e05a840.png" width="300">
 
 
 ## Has been tested on:
