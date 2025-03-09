@@ -18,24 +18,6 @@ permissions:
   packages: read
 
 jobs:
-  update-version:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Update version in setup.py
-        run: |
-          sed -i "s/__version__ = '.*'/__version__ = '${{ github.event.inputs.version }}'/" setup.py
-          
-      - name: Commit version update
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add setup.py
-          git commit -m "Bump version to ${{ github.event.inputs.version }}"
-          git push
-          
   build:
     needs: update-version
     runs-on: ubuntu-latest
