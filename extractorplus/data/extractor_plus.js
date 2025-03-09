@@ -125,7 +125,15 @@ Deluge.ux.preferences.ExtractorPlusPage = Ext.extend(Ext.Panel, {
             name: "use_temp_dir",
             fieldLabel: _('Use Temporary Directory'),
             labelSeparator: '',
-            boxLabel: _('Extract to a temporary directory first, then move to the final destination.'),
+            boxLabel: _('Extract to a temporary directory first (slower, use only if needed)'),
+            listeners: {
+                render: function (c) {
+                    Ext.QuickTips.register({
+                        target: c,
+                        text: 'Use only if other programs try to access files before extraction is complete. This is significantly slower since it requires copying files twice.'
+                    });
+                }
+            }
         });
         
         // Add temp directory field in a separate container

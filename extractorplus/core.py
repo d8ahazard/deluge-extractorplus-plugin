@@ -43,7 +43,7 @@ DEFAULT_PREFS = {'extract_path': '',
                  'extract_in_place': False,
                  'extract_selected_folder': False,
                  'extract_torrent_root': True,
-                 'use_temp_dir': True,
+                 'use_temp_dir': False,
                  'temp_dir': '',
                  'append_matched_label': False,
                  'append_archive_name': False,
@@ -434,7 +434,7 @@ class Core(CorePluginBase):
             ex_dir = temp_base.joinpath(str(torrent_id))
             log.info(f"Using temporary extraction directory: {ex_dir}")
         else:
-            # If not using temp, extract directly to the configured destination
+            # If not using temp dir, extract directly to the configured destination
             ex_dir = Path(destination)
             log.info(f"Extracting directly to destination: {ex_dir}")
             
@@ -477,7 +477,11 @@ class Core(CorePluginBase):
                 )
             else:
                 now = datetime.datetime.now().timestamp()
+                
+                # For all extraction methods, use temp filenames for final files
+                # to avoid issues with other programs accessing incomplete files
                 if use_temp:
+                    # If using temp dir, move files from temp to destination
                     log.debug("Moving files from temp directory to final destination...")
                     try:
                         allfiles = os.listdir(ex_dir)
@@ -517,8 +521,9 @@ class Core(CorePluginBase):
                         self.config['extracted'] = extracted
                         self.config.save()
                     except OSError as e:
-                        log.error("Error: %s : %s" % (ex_dir, e.strerror))
+                        log.error(f"Error: {ex_dir} : {e}")
                 else:
+                    # Simply track the new files created by extraction
                     extracted = self.config['extracted']
                     new_files = os.listdir(ex_dir)
                     for new_file in new_files:
@@ -529,7 +534,7 @@ class Core(CorePluginBase):
                     self.config['extracted'] = extracted
                     self.config.save()
         except Exception as e:
-            log.error("Extract Exception: %s" % e)
+            log.error(f"Extract Exception: {e}")
 
     @staticmethod
     def get_labels(torrent_id):
