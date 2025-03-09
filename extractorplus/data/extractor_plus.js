@@ -27,11 +27,23 @@ Deluge.ux.preferences.ExtractorPlusPage = Ext.extend(Ext.Panel, {
 
     initComponent: function () {
         Deluge.ux.preferences.ExtractorPlusPage.superclass.initComponent.call(this);
-      this.form = this.add({
+        
+        // Create the main container with vertical layout and scrolling capability
+        this.scrollContainer = this.add({
+            xtype: 'panel',
+            layout: 'anchor',
+            autoScroll: true,
+            border: false,
+            bodyStyle: 'padding: 5px;'
+        });
+        
+        // Add the form to the scrollable container
+        this.form = this.scrollContainer.add({
             xtype: 'form',
             layout: 'form',
             border: false,
             autoHeight: true,
+            anchor: '100%'
         });
        this.behaviorSet = this.form.add({
             xtype: 'fieldset',
@@ -57,6 +69,7 @@ Deluge.ux.preferences.ExtractorPlusPage = Ext.extend(Ext.Panel, {
                     boxLabel: _('Selected Folder'),
                     name: 'extract_behavior',
                     inputValue: "extract_selected_folder",
+                    checked: false,
                     listeners: {
                         render: function (c) {
                             Ext.QuickTips.register({
@@ -70,6 +83,7 @@ Deluge.ux.preferences.ExtractorPlusPage = Ext.extend(Ext.Panel, {
                     boxLabel: _('Torrent Root'),
                     name: 'extract_behavior',
                     inputValue: "extract_torrent_root",
+                    checked: false,
                     listeners: {
                         render: function (c) {
                             Ext.QuickTips.register({
@@ -83,6 +97,7 @@ Deluge.ux.preferences.ExtractorPlusPage = Ext.extend(Ext.Panel, {
                     boxLabel: _('In-Place'),
                     name: 'extract_behavior',
                     inputValue: "extract_in_place",
+                    checked: false,
                     listeners: {
                         render: function (c) {
                             Ext.QuickTips.register({
@@ -94,31 +109,64 @@ Deluge.ux.preferences.ExtractorPlusPage = Ext.extend(Ext.Panel, {
                 }
             ],
             listeners: {
-                change: function (radio, newValue, oldValue) {
-                    console.log("CLICK: ", newValue['inputValue']);
-                    this.setDestEnabled(newValue['inputValue'] === "extract_selected_folder");
+                change: function (radioGroup, checkedRadio) {
+                    if (checkedRadio && checkedRadio.inputValue) {
+                        console.log("Radio selection changed to:", checkedRadio.inputValue);
+                        this.setDestEnabled(checkedRadio.inputValue === "extract_selected_folder");
+                    }
                 },
                 scope: this,
             },
         });
 
-        // Use temp dir setting
+        // Add "Use Temp Directory" checkbox
         this.useTemp = this.behaviorSet.add({
             xtype: 'checkbox',
-            columns: 1,
-            colspan: 2,
-            labelStyle: 'display: none',
-            boxLabel: _('Extract to Temp and Move'),
             name: "use_temp_dir",
-            listeners: {
-                render: function (c) {
-                    Ext.QuickTips.register({
-                        target: c,
-                        text: 'Extract file(s) to a temporary directory first, then move them to specified destination.'
-                    });
-                }
-            }
+            fieldLabel: _('Use Temporary Directory'),
+            labelSeparator: '',
+            boxLabel: _('Extract to a temporary directory first, then move to the final destination.'),
         });
+        
+        // Add temp directory field in a separate container
+        this.tempDirContainer = this.behaviorSet.add({
+            xtype: 'container',
+            layout: 'form',
+            hideLabel: true,
+            style: 'margin-left: 25px; margin-bottom: 5px;'
+        });
+        
+        this.tempDir = this.tempDirContainer.add({
+            xtype: 'textfield',
+            name: 'temp_dir',
+            fieldLabel: _('Temp Directory'),
+            labelSeparator: '',
+            width: 300
+        });
+        
+        // Add max threads field
+        this.maxThreadsContainer = this.behaviorSet.add({
+            xtype: 'container',
+            layout: 'form',
+            hideLabel: false
+        });
+        
+        this.maxThreads = this.maxThreadsContainer.add({
+            xtype: 'spinnerfield',
+            name: 'max_extract_threads',
+            fieldLabel: _('Max Concurrent Extractions'),
+            labelSeparator: '',
+            minValue: 1,
+            maxValue: 10,
+            value: 2,
+            width: 100
+        });
+
+        // Link the temp directory field to be enabled only when useTemp is checked
+        this.useTemp.on('check', function(checkbox, checked) {
+            this.tempDir.setDisabled(!checked);
+            this.tempDirContainer.setVisible(checked);
+        }, this);
 
         this.appendArchive = this.behaviorSet.add({
             xtype: 'checkbox',
@@ -272,26 +320,61 @@ Deluge.ux.preferences.ExtractorPlusPage = Ext.extend(Ext.Panel, {
             name: '',
             width: '97%'
         });
+
+        // Make sure we load the config as soon as the component is rendered
+        this.on('afterrender', this.updateConfig, this);
+        // Also update when shown
         this.on('show', this.updateConfig, this);
     },
 
     onApply: function () {
-        // build settings object
+        // Build up config from form values
         var config = {};
         config['extract_path'] = this.extractPath.getValue();
-        var eBehavior = this.extractBehavior.getValue();
-        config['extract_in_place'] = false;
-        config['extract_torrent_root'] = false;
+        
+        // Initialize all extraction options to false
         config['extract_selected_folder'] = false;
-        config[eBehavior] = true;
+        config['extract_torrent_root'] = false;
+        config['extract_in_place'] = false;
+        
+        // Find which radio button is selected
+        var selectedValue = null;
+        var items = this.extractBehavior.items.items;
+        for (var i = 0; i < items.length; i++) {
+            if (items[i].checked) {
+                selectedValue = items[i].inputValue;
+                break;
+            }
+        }
+        
+        console.log("Selected radio value:", selectedValue);
+        
+        // Set the appropriate option based on selection
+        if (selectedValue === "extract_selected_folder") {
+            config['extract_selected_folder'] = true;
+        } else if (selectedValue === "extract_torrent_root") {
+            config['extract_torrent_root'] = true;
+        } else if (selectedValue === "extract_in_place") {
+            config['extract_in_place'] = true;
+        } else {
+            // Default to selected folder if nothing is selected
+            console.warn("No extraction location selected, defaulting to Selected Folder");
+            config['extract_selected_folder'] = true;
+        }
+        
+        // Set the rest of the config options
         config['label_filter'] = this.labelFilter.getValue();
         config['use_temp_dir'] = this.useTemp.getValue();
+        config['temp_dir'] = this.tempDir.getValue();
+        config['append_matched_label'] = this.appendLabel.getValue();
         config['append_archive_name'] = this.appendArchive.getValue();
         config['auto_cleanup'] = this.autoCleanup.getValue();
         config['cleanup_time'] = this.autoCleanupTime.getValue();
-        config['append_matched_label'] = this.appendLabel.getValue();
-        this.setDestEnabled(eBehavior === "extract_selected_folder");
-        this.showCleanupTime(config['auto_cleanup']);
+        config['max_extract_threads'] = this.maxThreads.getValue();
+        
+        console.log("Saving config:", config);
+        
+        // Save the config to the server
         deluge.client.extractorplus.set_config(config);
     },
 
@@ -303,22 +386,53 @@ Deluge.ux.preferences.ExtractorPlusPage = Ext.extend(Ext.Panel, {
         deluge.client.extractorplus.get_config({
             success: function (config) {
                 this.extractPath.setValue(config['extract_path']);
-                var behavior = "extract_selected_folder";
+                
+                // Determine which extraction behavior is active from the config
+                var behavior = null;
+                
+                console.log("Config values:", {
+                    in_place: config['extract_in_place'],
+                    torrent_root: config['extract_torrent_root'],
+                    selected_folder: config['extract_selected_folder']
+                });
+                
+                // Priority: in-place > torrent-root > selected-folder
                 if (config['extract_in_place']) {
-                    behavior = 'extract_in_place';
+                    behavior = "extract_in_place";
+                } else if (config['extract_torrent_root']) {
+                    behavior = "extract_torrent_root";
+                } else {
+                    behavior = "extract_selected_folder";
                 }
-                if (config['extract_torrent_root']) {
-                    behavior = 'extract_torrent_root';
+                
+                console.log("Selected behavior from config:", behavior);
+                
+                // Properly set the radio button
+                var items = this.extractBehavior.items.items;
+                for (var i = 0; i < items.length; i++) {
+                    var item = items[i];
+                    if (item.inputValue === behavior) {
+                        item.setValue(true);
+                    } else {
+                        item.setValue(false);
+                    }
                 }
+                
+                // Update UI visibility based on selection
                 this.setDestEnabled(behavior === "extract_selected_folder");
+                
+                // Set all other fields
                 this.showCleanupTime(config['auto_cleanup']);
-                this.extractBehavior.setValue(behavior);
                 this.labelFilter.setValue(config['label_filter']);
                 this.useTemp.setValue(config['use_temp_dir']);
+                this.tempDir.setValue(config['temp_dir'] || '');
+                this.tempDir.setDisabled(!config['use_temp_dir']);
+                this.tempDirContainer.setVisible(config['use_temp_dir']);
                 this.appendLabel.setValue(config['append_matched_label']);
+                this.appendArchive.setValue(config['append_archive_name']);
                 this.autoCleanup.setValue(config['auto_cleanup']);
                 this.autoCleanupTime.setValue(config['cleanup_time']);
-                this.appendArchive.setValue(config['append_archive_name']);
+                this.maxThreads.setValue(config['max_extract_threads'] || 2);
             },
             scope: this
         });
@@ -334,19 +448,65 @@ Deluge.ux.preferences.ExtractorPlusPage = Ext.extend(Ext.Panel, {
     }
 });
 
+// Create the proper plugin namespace
+Ext.ns('Deluge.plugins');
 
+// Define the plugin
 Deluge.plugins.ExtractorPlusPlugin = Ext.extend(Deluge.Plugin, {
-    name: 'Extractor Plus',
-    onDisable: function () {
-    console.log("Extractor plus disabled.");
-        deluge.preferences.removePage(this.prefsPage);
+    name: 'ExtractorPlus',
+
+    onDisable: function() {
+        // Clean up menus
+        if (this.tmSep) {
+            deluge.menus.torrent.remove(this.tmSep);
+        }
+        
+        if (this.tm) {
+            deluge.menus.torrent.remove(this.tm);
+        }
+        
+        // Remove preference page
+        if (this.prefsPage) {
+            deluge.preferences.removePage(this.prefsPage);
+        }
     },
 
-    onEnable: function () {
-        console.log("Extractor plus enabled.");
+    onEnable: function() {
+        // Add the preference page
         this.prefsPage = deluge.preferences.addPage(
-        new Deluge.ux.preferences.ExtractorPlusPage()
+            new Deluge.ux.preferences.ExtractorPlusPage()
         );
+
+        // Add a menu separator
+        this.tmSep = deluge.menus.torrent.add(new Ext.menu.Separator());
+        
+        // Add the menu item
+        this.tm = deluge.menus.torrent.add({
+            text: _('Force Extract'),
+            iconCls: 'icon-extract', // Use a CSS class for the icon
+            handler: this.onForceExtract,
+            scope: this
+        });
+    },
+    
+    onForceExtract: function() {
+        var torrentIds = deluge.torrents.getSelectedIds();
+        if (!torrentIds || torrentIds.length === 0) return;
+        
+        // Call the force_extract method for each selected torrent
+        Ext.each(torrentIds, function(torrentId) {
+            deluge.client.extractorplus.force_extract(torrentId, {
+                success: function(result) {
+                    if (result) {
+                        deluge.ui.notify(_('Force Extract'), _('Started extraction for selected torrent(s)'));
+                    } else {
+                        deluge.ui.notify(_('Force Extract'), _('Error: Could not extract selected torrent(s)'), 'error');
+                    }
+                }
+            });
+        });
     }
 });
-Deluge.registerPlugin('Extractor Plus', Deluge.plugins.ExtractorPlusPlugin);
+
+// Register the plugin
+Deluge.registerPlugin('ExtractorPlus', Deluge.plugins.ExtractorPlusPlugin);

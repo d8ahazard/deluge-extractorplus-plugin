@@ -22,9 +22,10 @@ import shutil
 import subprocess
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from shutil import which
-from threading import Thread
+from threading import Thread, Lock
 
 import deluge.component as component
 import deluge.configmanager
@@ -43,11 +44,13 @@ DEFAULT_PREFS = {'extract_path': '',
                  'extract_selected_folder': False,
                  'extract_torrent_root': True,
                  'use_temp_dir': True,
+                 'temp_dir': '',
                  'append_matched_label': False,
                  'append_archive_name': False,
                  'label_filter': '',
                  'auto_cleanup': False,
                  'cleanup_time': 2,
+                 'max_extract_threads': 2,
                  'extracted': []
                  }
 
@@ -115,6 +118,14 @@ class Core(CorePluginBase):
         self.EXTRACT_COUNT = 0
         self.EXTRACT_TOTAL = 0
         self.check_thread = None
+        self.config = deluge.configmanager.ConfigManager(
+            'extractorplus.conf', DEFAULT_PREFS
+        )
+        self.check_thread = RepeatedTimer(60.0 * 60.0, self.check_cleanup)
+        if self.config['auto_cleanup']:
+            self.check_thread.start()
+        self.extract_lock = Lock()
+        self.extract_pool = None
 
     def enable(self):
         log.info("ExtractorPlus enabled.")
@@ -146,6 +157,11 @@ class Core(CorePluginBase):
                 self.check_thread.stop()
             except Exception as q:
                 log.info("Exception stopping check thread: %s" % q)
+        
+        # Initialize thread pool for extraction
+        max_threads = self.config['max_extract_threads']
+        self.extract_pool = ThreadPoolExecutor(max_workers=max_threads)
+        
         component.get('EventManager').register_event_handler(
             'TorrentFinishedEvent', self._on_torrent_finished
         )
@@ -154,12 +170,18 @@ class Core(CorePluginBase):
         component.get('EventManager').deregister_event_handler(
             'TorrentFinishedEvent', self._on_torrent_finished
         )
-        if self.check_thread is not None:
-            log.info("Stopping check thread.")
+        if self.check_thread:
             try:
                 self.check_thread.stop()
-            except Exception as ex:
-                log.error("Exception stopping check thread: %s" % ex)
+            except Exception as q:
+                log.info("Exception stopping check thread: %s" % q)
+                
+        # Shutdown the thread pool
+        if self.extract_pool:
+            try:
+                self.extract_pool.shutdown(wait=True)
+            except Exception as e:
+                log.error(f"Error shutting down thread pool: {e}")
 
     def update(self):
         pass
@@ -233,26 +255,69 @@ class Core(CorePluginBase):
             do_extract = True
 
         if do_extract:
+            # Get all the configuration settings
             extract_in_place = self.config["extract_in_place"]
             extract_selected_folder = self.config["extract_selected_folder"]
+            extract_torrent_root = self.config["extract_torrent_root"]
             append_label = self.config["append_matched_label"]
             append_archive = self.config["append_archive_name"]
-            extract_torrent_root = self.config["extract_torrent_root"]
-            dest = Path(self.config["extract_path"])
-
-            if extract_selected_folder and append_label and matched_label is not None:
-                dest.joinpath(matched_label)
-            # Override destination if extract_torrent_root is set
-            if extract_torrent_root:
+            
+            # Log current settings for debugging
+            log.info(f"Current extraction settings: In-Place={extract_in_place}, Torrent Root={extract_torrent_root}, Selected Folder={extract_selected_folder}")
+            
+            # Ensure only one extraction mode is active - prioritize in-place, then torrent root, then selected folder
+            if extract_in_place:
+                extract_torrent_root = False
+                extract_selected_folder = False
+                log.info("Extraction mode: In-Place (prioritized)")
+            elif extract_torrent_root:
+                extract_selected_folder = False
+                log.info("Extraction mode: Torrent Root")
+            elif extract_selected_folder:
+                log.info("Extraction mode: Selected Folder")
+            else:
+                # Default to Selected Folder if no option is explicitly set
+                extract_selected_folder = True
+                log.info("Extraction mode: Selected Folder (default)")
+            
+            # Define the base destination based on the extraction mode
+            if extract_selected_folder:
+                dest = Path(self.config["extract_path"])
+                # Append matched label if configured
+                if append_label and matched_label is not None:
+                    dest = dest.joinpath(matched_label)
+                    log.info(f"Appending label to destination: {dest}")
+            elif extract_torrent_root:
                 dest = Path(t_status['download_location']).joinpath(t_status['name'])
+                log.info(f"Using torrent root as destination: {dest}")
+            else:
+                # For in-place extraction, we'll set a default dest but override per file
+                # We actually don't need a default dest for in-place since each file sets its own
+                # But setting it to the download location as a fallback
+                dest = Path(t_status['download_location'])
+                log.info(f"Using in-place extraction with base path: {dest}")
+            
             files = tid.get_files()
 
             for f in files:
                 file = f['path']
                 file_dest = dest
-                # Override destination to file path if in_place set
-                f_parent = Path(t_status['download_location']).joinpath(os.path.dirname(f['path']))
-                if extract_in_place and ((not os.path.exists(f_parent)) or os.path.isdir(f_parent)):
+                
+                # Override destination to file path if in_place is set
+                if extract_in_place:
+                    # For in-place extraction, use the directory containing the archive
+                    parent_dir = os.path.dirname(f['path'])
+                    f_parent = Path(t_status['download_location']).joinpath(parent_dir)
+                    
+                    # Make sure the path exists
+                    if not os.path.exists(f_parent):
+                        try:
+                            os.makedirs(f_parent)
+                            log.info(f"Created parent directory for in-place extraction: {f_parent}")
+                        except Exception as e:
+                            log.error(f"Failed to create parent directory {f_parent}: {e}")
+                    
+                    log.info(f"In-place extraction for {file} to parent directory: {f_parent}")
                     file_dest = f_parent
 
                 file_root, file_ext = os.path.splitext(f['path'])
@@ -260,7 +325,8 @@ class Core(CorePluginBase):
                 if file_ext_sec == ".tar":
                     file_ext = file_ext_sec + file_ext
                     file_root = os.path.splitext(file_root)[0]
-                    # IF it's not extractable, move on.
+                
+                # If it's not extractable, move on.
                 if file_ext not in EXTRACT_COMMANDS:
                     continue
 
@@ -268,18 +334,22 @@ class Core(CorePluginBase):
                     file_name = ntpath.basename(f['path'])
                     archive_name = os.path.splitext(file_name)[0]
                     file_dest = Path(file_dest).joinpath(archive_name)
+                    log.info(f"Appending archive name: final destination is {file_dest}")
 
-                    # Check to prevent double extraction with rar/r00 files
+                # Check to prevent double extraction with rar/r00 files
                 if file_ext == '.r00' and any(x['path'] == file_root + '.rar' for x in files):
                     log.debug('Skipping file with .r00 extension because a matching .rar file exists: %s' % file)
                     continue
 
-                    # Check for RAR archives with PART in the name
+                # Check for RAR archives with PART in the name
                 if file_ext == '.rar' and 'part' in file_root:
                     part_num = file_root.split('part')[1]
                     if part_num.isdigit() and int(part_num) != 1:
                         log.debug('Skipping remaining multi-part rar files: %s' % file)
                         continue
+                
+                # Make sure the path is properly quoted for logging
+                log.info(f"Creating ExtractObject for {f['path']} with destination: {file_dest}")
                 eo = ExtractObject(f['path'], file_dest)
                 to_extract.append(eo)
 
@@ -318,12 +388,28 @@ class Core(CorePluginBase):
 
         if len(extract_objects) > 0:
             use_temp = self.config["use_temp_dir"]
-            ex_obj: ExtractObject
+            futures = []
+            
+            # Submit extraction tasks to the thread pool
             for ex_obj in extract_objects:
-                self.do_extract(ex_obj, torrent_id)
+                futures.append(self.extract_pool.submit(self.do_extract, ex_obj, torrent_id))
+            
+            # Wait for all extractions to complete
+            for future in futures:
+                future.result()  # This will block until the extraction is complete
+                
             if use_temp:
-                ex_dir = Path(tempfile.gettempdir()).joinpath(str(torrent_id))
-                os.rmdir(ex_dir)
+                # Use the specified temp directory if available, otherwise use system temp
+                if self.config["temp_dir"] and os.path.isdir(self.config["temp_dir"]):
+                    temp_base = Path(self.config["temp_dir"])
+                else:
+                    temp_base = Path(tempfile.gettempdir())
+                ex_dir = temp_base.joinpath(str(torrent_id))
+                if os.path.exists(ex_dir):
+                    try:
+                        os.rmdir(ex_dir)
+                    except OSError as e:
+                        log.warning(f"Could not remove temp directory: {e}")
         torrent.is_finished = True
         torrent.update_state()
         log.info("Processing complete for torrent: %s" % torrent_name)
@@ -333,20 +419,48 @@ class Core(CorePluginBase):
         :param torrent_id:
         :type to_extract: ExtractObject
         """
-        destination = to_extract.destination
+        # Get the absolute path of the configured destination
+        destination = str(to_extract.destination)
+        log.info(f"Extracting to final destination: {destination}")
+        
+        # Handle temporary directory for extraction
         use_temp = self.config["use_temp_dir"]
-        ex_dir = to_extract.destination
         if use_temp:
-            ex_dir = Path(tempfile.gettempdir()).joinpath(str(torrent_id))
+            # Use the specified temp directory if available, otherwise use system temp
+            if self.config["temp_dir"] and os.path.isdir(self.config["temp_dir"]):
+                temp_base = Path(self.config["temp_dir"])
+            else:
+                temp_base = Path(tempfile.gettempdir())
+            ex_dir = temp_base.joinpath(str(torrent_id))
+            log.info(f"Using temporary extraction directory: {ex_dir}")
+        else:
+            # If not using temp, extract directly to the configured destination
+            ex_dir = Path(destination)
+            log.info(f"Extracting directly to destination: {ex_dir}")
+            
+        # Make sure the extraction directory exists
         try:
-            if not (os.path.exists(ex_dir) and os.path.isdir(ex_dir) and use_temp):
+            if not os.path.exists(ex_dir):
+                log.info(f"Creating extraction directory: {ex_dir}")
                 os.makedirs(ex_dir)
-        except Exception as f:
-            log.info("MKEX: %s" % f)
+            elif not os.path.isdir(ex_dir):
+                log.error(f"Extraction path exists but is not a directory: {ex_dir}")
+                return
+        except Exception as e:
+            log.error(f"Failed to create extraction directory: {e}")
+            return
+            
+        # Store existing files to detect new ones for cleanup tracking
+        try:
+            existing_files = os.listdir(ex_dir)
+        except Exception as e:
+            log.error(f"Failed to list directory contents: {e}")
+            existing_files = []
+            
+        # Prepare extraction command
         try:
             commands = to_extract.command1
             commands.append(to_extract.path)
-            existing_files = os.listdir(ex_dir)
             if to_extract.command2 is None:
                 log.info('Extracting with command: "%s" to "%s"' % (" ".join(commands), str(ex_dir.name)))
                 ps = subprocess.Popen(to_extract.command1, cwd=ex_dir, stdout=subprocess.PIPE)
@@ -364,27 +478,42 @@ class Core(CorePluginBase):
             else:
                 now = datetime.datetime.now().timestamp()
                 if use_temp:
-                    log.debug("Moving files from temp...")
+                    log.debug("Moving files from temp directory to final destination...")
                     try:
                         allfiles = os.listdir(ex_dir)
                         try:
                             if not (os.path.exists(destination) and os.path.isdir(destination)):
+                                log.info(f"Creating final destination directory: {destination}")
                                 os.makedirs(destination)
                         except OSError as ex:
                             if not (ex.errno == errno.EEXIST and os.path.isdir(destination)):
-                                log.error("Error creating destination folder: %s" % ex)
-                        log.debug("Moving files for %s from temp to %s." % (to_extract.path, destination))
+                                log.error(f"Error creating destination folder: {ex}")
+                                return
+                        
+                        log.info(f"Moving files from temp {ex_dir} to final destination {destination}")
                         extracted = self.config['extracted']
                         for f in allfiles:
                             src = ex_dir.joinpath(f)
                             dest = Path(destination).joinpath(f)
-                            temp_dest = "%s.extplus" % dest
-                            log.info("Moving %s to %s" % (src, temp_dest))
-                            shutil.move(src, temp_dest)
-                            log.info("Renaming %s to %s" % (temp_dest, dest))
-                            shutil.move(temp_dest, dest)
-                            os.utime(dest, (now, now))
-                            extracted.append(str(dest))
+                            temp_dest = f"{dest}.extplus"
+                            log.info(f"Moving {src} to {dest} (via temp {temp_dest})")
+                            try:
+                                shutil.move(str(src), temp_dest)
+                                log.info(f"Renaming {temp_dest} to {dest}")
+                                shutil.move(temp_dest, str(dest))
+                                os.utime(str(dest), (now, now))
+                                extracted.append(str(dest))
+                            except Exception as move_error:
+                                log.error(f"Failed to move/rename file: {move_error}")
+                                # If rename failed but temp file exists, try to recover
+                                if os.path.exists(temp_dest):
+                                    try:
+                                        shutil.move(temp_dest, str(dest))
+                                        log.info(f"Recovered from rename failure for {temp_dest}")
+                                        os.utime(str(dest), (now, now))
+                                        extracted.append(str(dest))
+                                    except Exception as recovery_error:
+                                        log.error(f"Recovery attempt failed: {recovery_error}")
                         self.config['extracted'] = extracted
                         self.config.save()
                     except OSError as e:
@@ -427,20 +556,78 @@ class Core(CorePluginBase):
     def set_config(self, config):
         """Sets the config dictionary."""
         auto_clean = self.config['auto_cleanup']
+        max_threads = self.config['max_extract_threads']
+        
         for key in config:
             self.config[key] = config[key]
+            
         if auto_clean != self.config['auto_cleanup']:
             auto_clean = self.config['auto_cleanup']
             if auto_clean:
                 self.check_thread.start()
             else:
                 self.check_thread.stop()
+                
+        # Update thread pool if max_threads changed
+        if max_threads != self.config['max_extract_threads']:
+            # Shutdown existing pool and create a new one with updated thread count
+            if self.extract_pool:
+                self.extract_pool.shutdown(wait=False)
+            self.extract_pool = ThreadPoolExecutor(max_workers=self.config['max_extract_threads'])
+            
         self.config.save()
 
     @export
     def get_config(self):
         """Returns the config dictionary."""
         return self.config.config
+
+    @export
+    def force_extract(self, torrent_id):
+        """
+        Manually starts the extraction process for a torrent regardless of its state.
+        """
+        log.info("Force extraction requested for torrent ID: %s", torrent_id)
+        
+        # Get the torrent manager
+        torrent_manager = component.get('TorrentManager')
+        
+        # Check if the torrent exists
+        if torrent_id not in torrent_manager.torrents:
+            log.error("Torrent ID %s not found.", torrent_id)
+            return False
+            
+        torrent = torrent_manager.torrents[torrent_id]
+        
+        # Check if the torrent is completed by checking its progress
+        try:
+            t_status = torrent.get_status(['progress', 'name'])
+            log.info("Checking if torrent '%s' is complete (progress: %.2f%%)", 
+                    t_status['name'], t_status['progress'])
+            
+            if t_status['progress'] < 100:
+                log.warning("Torrent %s is not completed yet (%.2f%%), skipping force extraction", 
+                           t_status['name'], t_status['progress'])
+                return False
+        except Exception as e:
+            log.error("Error checking torrent completion status: %s", str(e))
+            return False
+        
+        # Log the extraction configuration
+        log.info("Using extraction settings: In-Place=%s, Torrent Root=%s, Selected Folder=%s",
+                self.config["extract_in_place"],
+                self.config["extract_torrent_root"],
+                self.config["extract_selected_folder"])
+        
+        # Get full torrent status and manually trigger the extraction process
+        log.info("Starting extraction for torrent: %s", t_status['name'])
+        try:
+            self._on_torrent_finished(torrent_id)
+            log.info("Extraction process started successfully for %s", t_status['name'])
+            return True
+        except Exception as e:
+            log.error("Error during force extraction: %s", str(e))
+            return False
 
 
 class ExtractObject:

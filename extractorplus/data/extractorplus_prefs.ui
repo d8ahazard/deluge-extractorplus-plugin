@@ -112,14 +112,52 @@
         </child>
         <child>
           <object class="GtkCheckButton" id="use_temp_dir">
-            <property name="label" translatable="yes">Extract to Temp and Move</property>
+            <property name="label" translatable="yes">Use Temporary Directory</property>
             <property name="visible">True</property>
             <property name="can-focus">True</property>
             <property name="receives-default">False</property>
-            <property name="tooltip-text" translatable="yes">Extract file(s) to a temporary directory first, then move them to specified destination.</property>
-            <property name="halign">start</property>
-            <property name="margin-left">4</property>
+            <property name="tooltip-text" translatable="yes">Extract to a temporary directory first, then move to the final destination. This can help avoid issues with other applications trying to access files before extraction is complete.</property>
+            <property name="xalign">0</property>
             <property name="draw-indicator">True</property>
+          </object>
+          <packing>
+            <property name="expand">False</property>
+            <property name="fill">True</property>
+            <property name="position">0</property>
+          </packing>
+        </child>
+        <child>
+          <object class="GtkBox" id="temp_dir_box">
+            <property name="visible">True</property>
+            <property name="can-focus">False</property>
+            <property name="margin-left">20</property>
+            <property name="orientation">horizontal</property>
+            <property name="spacing">5</property>
+            <child>
+              <object class="GtkLabel" id="temp_dir_label">
+                <property name="visible">True</property>
+                <property name="can-focus">False</property>
+                <property name="label" translatable="yes">Temp Directory:</property>
+                <property name="tooltip-text" translatable="yes">Optional: Specify a custom temporary directory. Leave empty to use system default.</property>
+              </object>
+              <packing>
+                <property name="expand">False</property>
+                <property name="fill">True</property>
+                <property name="position">0</property>
+              </packing>
+            </child>
+            <child>
+              <object class="GtkEntry" id="temp_dir">
+                <property name="visible">True</property>
+                <property name="can-focus">True</property>
+                <property name="tooltip-text" translatable="yes">Optional: Specify a custom temporary directory. Leave empty to use system default.</property>
+              </object>
+              <packing>
+                <property name="expand">True</property>
+                <property name="fill">True</property>
+                <property name="position">1</property>
+              </packing>
+            </child>
           </object>
           <packing>
             <property name="expand">False</property>
@@ -301,14 +339,17 @@
                   </packing>
                 </child>
                 <child>
-                  <object class="GtkBox" id="cleanup_time_box">
+                  <object class="GtkBox" id="auto_cleanup_time_box">
                     <property name="visible">True</property>
                     <property name="can-focus">False</property>
+                    <property name="margin-left">20</property>
+                    <property name="orientation">horizontal</property>
+                    <property name="spacing">5</property>
                     <child>
-                      <object class="GtkLabel" id="cleanup_time_label">
+                      <object class="GtkLabel" id="auto_cleanup_time_label">
                         <property name="visible">True</property>
                         <property name="can-focus">False</property>
-                        <property name="label" translatable="yes">Cleanup Time (hours): </property>
+                        <property name="label" translatable="yes">Hours:</property>
                       </object>
                       <packing>
                         <property name="expand">False</property>
@@ -320,8 +361,9 @@
                       <object class="GtkEntry" id="cleanup_time">
                         <property name="visible">True</property>
                         <property name="can-focus">True</property>
-                        <property name="max-length">2</property>
-                        <property name="secondary-icon-tooltip-text" translatable="yes">Amount of time (in hours) to wait before auto-deleting extracted files. Minimum is 1.</property>
+                        <property name="max-length">3</property>
+                        <property name="width-chars">3</property>
+                        <property name="text" translatable="yes">2</property>
                         <property name="input-purpose">number</property>
                       </object>
                       <packing>
@@ -335,6 +377,48 @@
                     <property name="expand">False</property>
                     <property name="fill">True</property>
                     <property name="position">1</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkBox" id="max_threads_box">
+                    <property name="visible">True</property>
+                    <property name="can-focus">False</property>
+                    <property name="orientation">horizontal</property>
+                    <property name="spacing">5</property>
+                    <child>
+                      <object class="GtkLabel" id="max_threads_label">
+                        <property name="visible">True</property>
+                        <property name="can-focus">False</property>
+                        <property name="label" translatable="yes">Max Concurrent Extractions:</property>
+                        <property name="tooltip-text" translatable="yes">Maximum number of extractions to run simultaneously.</property>
+                      </object>
+                      <packing>
+                        <property name="expand">False</property>
+                        <property name="fill">True</property>
+                        <property name="position">0</property>
+                      </packing>
+                    </child>
+                    <child>
+                      <object class="GtkEntry" id="max_extract_threads">
+                        <property name="visible">True</property>
+                        <property name="can-focus">True</property>
+                        <property name="max-length">2</property>
+                        <property name="width-chars">2</property>
+                        <property name="text" translatable="yes">2</property>
+                        <property name="input-purpose">number</property>
+                        <property name="tooltip-text" translatable="yes">Maximum number of extractions to run simultaneously.</property>
+                      </object>
+                      <packing>
+                        <property name="expand">False</property>
+                        <property name="fill">True</property>
+                        <property name="position">1</property>
+                      </packing>
+                    </child>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">True</property>
+                    <property name="position">2</property>
                   </packing>
                 </child>
               </object>

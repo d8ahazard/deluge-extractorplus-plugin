@@ -1,0 +1,113 @@
+name: Build and Release
+
+on:
+  # Manually trigger the workflow
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 1.7.0)'
+        required: true
+      pre_release:
+        description: 'Pre-release'
+        type: boolean
+        default: false
+
+# Set permissions to allow creating releases and committing changes
+permissions:
+  contents: write
+  packages: read
+
+jobs:
+  update-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Update version in setup.py
+        run: |
+          sed -i "s/__version__ = '.*'/__version__ = '${{ github.event.inputs.version }}'/" setup.py
+          
+      - name: Commit version update
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add setup.py
+          git commit -m "Bump version to ${{ github.event.inputs.version }}"
+          git push
+          
+  build:
+    needs: update-version
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.6', '3.7', '3.8', '3.9', '3.10', '3.11', '3.12']
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          ref: main  # Get the updated version from the main branch
+      
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install setuptools wheel
+      
+      - name: Build egg
+        run: |
+          python setup.py bdist_egg
+      
+      - name: Upload egg artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: python-${{ matrix.python-version }}-egg
+          path: dist/*.egg
+  
+  create-release:
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          ref: main  # Get the updated version
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: eggs
+      
+      - name: Move eggs to single directory
+        run: |
+          mkdir -p release-assets
+          find eggs -name "*.egg" -exec cp {} release-assets/ \;
+          ls -la release-assets/
+      
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ github.event.inputs.version }}
+          name: ExtractorPlus v${{ github.event.inputs.version }}
+          body: |
+            # ExtractorPlus v${{ github.event.inputs.version }}
+            
+            ## Changes
+            <!-- Add your changes here -->
+            
+            ## Installation
+            Download the egg file that matches your Python version:
+            - For Windows: ExtractorPlus-${{ github.event.inputs.version }}-py39.egg
+            - For Linux: Choose the egg that matches your Python version
+            
+            See README.md for full installation instructions.
+          files: release-assets/*.egg
+          draft: true
+          prerelease: ${{ github.event.inputs.pre_release }} 

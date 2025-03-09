@@ -25,6 +25,10 @@ And so, here we are!
 #### (New) Append Archive Name to Root
 When enabled, a directory will be created in the extraction destination named after the torrent being extracted.
 
+#### (New) Append Archive Name to Root
+
+When enabled, a directory will be created in the extraction destination named after the torrent being extracted.
+
 #### (New) Automatic Cleanup:
 When enabled, extracted files will automatically be deleted after a specified period of time. Useful for cases
 where you only need the extracted files to exist long enough to be copied by other applications.
@@ -33,6 +37,15 @@ where you only need the extracted files to exist long enough to be copied by oth
 If a download is being monitored by other software, issues can often arise when extraction begins and the "other"
 software tries to copy the extracted file(s) before extraction is complete. By extracting to a temporary directory and
 then moving the completed file, these issues can be avoided. This can be disabled in settings.
+
+#### (New) Custom Temp Directory:
+You can now specify a custom temporary directory for extraction instead of using the system default. This is useful for ensuring extractions happen on the same filesystem as your final destination to make moves faster.
+
+#### (New) Limit Concurrent Extractions:
+Control how many extraction processes can run simultaneously to prevent system overload. Default is 2 concurrent extractions.
+
+#### (New) Force Extract Completed Torrents:
+Right-click on any completed torrent and select "Force Extract" to manually extract its archives. Useful for torrents that were completed before installing the plugin or when you need to re-extract files.
 
 #### Label filtering:
 Enter a comma-separated list of labels, only those labels will be extracted. Works with the default labels plugin, as well as labelplus.
@@ -75,8 +88,44 @@ of python you want to build for, and then run the following command from the roo
   python setup.py bdist_egg
 ```
 
-Alternatively, if you're using Windows, execute the "build.ps1" powershell script to automagically build eggs for any
-installed version of Python from 3.5-3.14(future).
+## Multi-Version Building
+
+There are three ways to build eggs for multiple Python versions:
+
+### 1. Windows PowerShell Script (Windows Only)
+For Windows users, execute the "build.ps1" PowerShell script to automatically build eggs for any installed version of Python from 3.5-3.14.
+```
+  .\build.ps1
+```
+
+### 2. Python Build Script (Cross-Platform)
+Use the included Python script that detects and builds for all installed Python versions:
+```
+  python build.py
+```
+
+### 3. Docker Build Script (Cross-Platform, No Local Python Installations Needed)
+If you have Docker installed, you can build for all Python versions without needing them installed locally:
+```
+  python build_docker.py
+```
+This is the most convenient method as it will create eggs for Python 3.6-3.12 regardless of what's installed on your system.
+
+### 4. GitHub Actions (Automated Releases)
+This project includes a GitHub Actions workflow that can automatically:
+- Update the version number in setup.py
+- Build eggs for Python 3.6-3.12
+- Create a GitHub release with all the eggs attached
+
+To use this workflow:
+1. Go to the "Actions" tab in your GitHub repository
+2. Select the "Build and Release" workflow
+3. Click "Run workflow"
+4. Enter the new version number (e.g., 1.7.0)
+5. Choose whether this is a pre-release
+6. Review and publish the draft release after the workflow completes
+
+This is the easiest method for creating official releases with all Python version eggs included.
 
 Compiled egg files will appear in the /dist folder of the project root.
 
