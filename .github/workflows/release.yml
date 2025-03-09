@@ -47,32 +47,12 @@ jobs:
       - name: Build egg
         run: |
           python setup.py bdist_egg
-          
-          # Get the Python version in short format (e.g., 3.10 -> py3.10)
-          PY_SHORT=$(echo ${{ matrix.python-version }} | sed 's/^/py/')
-          
-          # Rename the egg file to the correct format
-          # First find the egg file
-          EGG_FILE=$(find dist -name "*.egg" -type f)
-          
-          # Check if egg file was found
-          if [ -n "$EGG_FILE" ]; then
-            # Create the proper filename
-            NEW_NAME="dist/ExtractorPlus-${VERSION}-${PY_SHORT}.egg"
-            
-            # Rename the file
-            mv "$EGG_FILE" "$NEW_NAME"
-            echo "Renamed egg file to $NEW_NAME"
-          else
-            echo "No egg file found in dist directory"
-            exit 1
-          fi
       
       - name: Upload egg artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ExtractorPlus-${{ env.VERSION }}-py${{ matrix.python-version }}
-          path: dist/ExtractorPlus-${{ env.VERSION }}-py${{ matrix.python-version }}.egg
+          name: python-${{ matrix.python-version }}-egg
+          path: dist/*.egg
           
       # Save version for use in the create-release job
       - name: Save version to artifact
@@ -129,7 +109,7 @@ jobs:
             
             ## Installation
             Download the egg file that matches your Python version:
-            - For Windows: ExtractorPlus-${{ env.VERSION }}-py3.9.egg
+            - For Windows: ExtractorPlus-${{ env.VERSION }}-py39.egg
             - For Linux: Choose the egg that matches your Python version
             
             See README.md for full installation instructions.
