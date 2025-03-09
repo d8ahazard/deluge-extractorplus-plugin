@@ -4,9 +4,6 @@ on:
   # Manually trigger the workflow
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version number (e.g., 1.7.0)'
-        required: true
       pre_release:
         description: 'Pre-release'
         type: boolean
@@ -40,6 +37,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install setuptools wheel
       
+      - name: Extract version from setup.py
+        id: get_version
+        run: |
+          VERSION=$(grep -E "^__version__ = '([^']+)'" setup.py | cut -d"'" -f2)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Extracted version: $VERSION"
+      
       - name: Build egg
         run: |
           python setup.py bdist_egg
@@ -49,6 +53,19 @@ jobs:
         with:
           name: python-${{ matrix.python-version }}-egg
           path: dist/*.egg
+          
+      # Save version for use in the create-release job
+      - name: Save version to artifact
+        if: matrix.python-version == '3.9'  # Only need to save once
+        run: |
+          echo "${{ env.VERSION }}" > version.txt
+      
+      - name: Upload version artifact
+        if: matrix.python-version == '3.9'  # Only need to upload once
+        uses: actions/upload-artifact@v3
+        with:
+          name: version
+          path: version.txt
   
   create-release:
     needs: build
@@ -63,29 +80,36 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v3
         with:
-          path: eggs
+          path: artifacts
+      
+      # Get the version from the artifact
+      - name: Get version
+        run: |
+          VERSION=$(cat artifacts/version/version.txt)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Using version: $VERSION"
       
       - name: Move eggs to single directory
         run: |
           mkdir -p release-assets
-          find eggs -name "*.egg" -exec cp {} release-assets/ \;
+          find artifacts -name "*.egg" -exec cp {} release-assets/ \;
           ls -la release-assets/
       
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ github.event.inputs.version }}
-          name: ExtractorPlus v${{ github.event.inputs.version }}
+          tag_name: v${{ env.VERSION }}
+          name: ExtractorPlus v${{ env.VERSION }}
           body: |
-            # ExtractorPlus v${{ github.event.inputs.version }}
+            # ExtractorPlus v${{ env.VERSION }}
             
             ## Changes
             <!-- Add your changes here -->
             
             ## Installation
             Download the egg file that matches your Python version:
-            - For Windows: ExtractorPlus-${{ github.event.inputs.version }}-py39.egg
+            - For Windows: ExtractorPlus-${{ env.VERSION }}-py39.egg
             - For Linux: Choose the egg that matches your Python version
             
             See README.md for full installation instructions.
