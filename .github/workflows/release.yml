@@ -19,7 +19,6 @@ permissions:
 
 jobs:
   build:
-    needs: update-version
     runs-on: ubuntu-latest
     strategy:
       matrix:
